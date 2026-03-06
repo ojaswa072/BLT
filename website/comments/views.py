@@ -8,7 +8,7 @@ from django.shortcuts import render
 from django.template.loader import render_to_string
 from django.utils.html import escape, strip_tags
 
-from website.models import Issue
+from website.models import Issue, UserProfile
 
 from .models import Comment
 
@@ -66,6 +66,12 @@ def _get_issue_ct():
     return ContentType.objects.get_for_model(Issue)
 
 
+def _resolve_author_profile(user):
+    """Get or create UserProfile for the given user — ensures author_fk is never None."""
+    profile, _ = UserProfile.objects.get_or_create(user=user)
+    return profile
+
+
 @login_required(login_url="/accounts/login/")
 def add_comment(request):
     if request.method != "POST":
@@ -87,7 +93,15 @@ def add_comment(request):
     _notify_mentioned_users(mentioned_users, request.user, pk, new_msg)
 
     issue_ct = _get_issue_ct()
-    comment = Comment(author=author, author_url=author_url, content_type=issue_ct, object_id=issue.pk, text=new_text)
+    author_fk = _resolve_author_profile(request.user)
+    comment = Comment(
+        author=author,
+        author_fk=author_fk,
+        author_url=author_url,
+        content_type=issue_ct,
+        object_id=issue.pk,
+        text=new_text,
+    )
     comment.save()
     all_comment = Comment.objects.filter(content_type=issue_ct, object_id=issue.pk)
     return render(
@@ -216,8 +230,10 @@ def reply_comment(request, pk):
     new_text, new_msg, mentioned_users = _process_mentions(reply_text)
     _notify_mentioned_users(mentioned_users, request.user, issue_pk, new_msg)
 
+    author_fk = _resolve_author_profile(request.user)
     comment = Comment(
         author=author,
+        author_fk=author_fk,
         author_url=author_url,
         content_type=issue_ct,
         object_id=issue.pk,
